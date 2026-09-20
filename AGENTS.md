@@ -6,6 +6,17 @@
   `docs` / `refactor` / `test` / `chore`。
 - **不要自动推送、不要自动打标签或发版本**：只有明确说「推送」「发布版本」时才做。
 - 不要把构建产物提交进仓库（`target/`、`dist/`、`data/` 已在 `.gitignore`）。
+- 远端是 https://github.com/Jnternet/mind_flow （分支 `main`）。
+- 本开发容器把 `<项目>/.git` 挂成了只读 tmpfs，**不能直接在工作区里 commit/push**；
+  发布用 `scripts/publish.sh`：它把工作区同步到可写镜像仓库（默认 `/tmp/mind_flow_publish`）再提交推送。
+
+  ```bash
+  GITHUB_TOKEN=xxx bash scripts/publish.sh "chore: 说明这次改了什么"
+  bash scripts/publish.sh --dry-run "chore: 只演练"   # 验证凭据与网络，不落改动
+  ```
+
+  凭据需要**写权限**：细粒度 token 勾「Contents: Read and write」（并把本仓库加入授权范围），
+  经典 token 勾 `repo`。token 只放环境变量或 `~/.git-credentials`，绝不写进仓库。
 
 ## 提交前必须通过
 

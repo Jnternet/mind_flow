@@ -85,6 +85,13 @@ node scripts/e2e-browser.mjs         # 真 Firefox 里验证界面行为
 bash scripts/build-release.sh        # 打 Linux（可选 Windows/CUDA）产物到 dist/
 ```
 
+发布到 GitHub（需要带写权限的 token，只放环境变量里，不写进仓库）：
+
+```bash
+GITHUB_TOKEN=xxx bash scripts/publish.sh "chore: 这次改了什么"
+bash scripts/publish.sh --dry-run "chore: 只演练不推送"
+```
+
 模型目录布局（`data/models/`，也是 `vendor/models/` 的样子）：
 
 ```

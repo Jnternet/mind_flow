@@ -34,6 +34,8 @@ pub enum Event {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusEvent {
+    /// 程序版本：确认「页面 / 二进制」是不是同一版时先看这个。
+    pub version: String,
     pub session: Option<String>,
     pub sentences: usize,
     pub segments: usize,

@@ -11,11 +11,30 @@ use super::{Engine, EngineInfo, RawSentence};
 use crate::audio::{TARGET_RATE, duration_ms, i16_to_f32};
 use crate::models::ModelPaths;
 use crate::sentences::build_sentences;
+use std::path::Path;
 
 pub const ENGINE_NAME: &str = "sherpa-onnx";
 pub const ENGINE_VERSION: &str = "1.13.8";
 /// 单次解码的最长音频（秒）。超长语音按 VAD 静音切成多块，与 FunASR 管线的做法一致。
 const MAX_CHUNK_SECONDS: f32 = 30.0;
+
+/// 交给底层 C 库的模型路径。
+///
+/// Windows 上加 `\\?\` 前缀：一是绕开 MAX_PATH（解压路径深时 ONNX Runtime 会读不到文件），
+/// 二是让路径按宽字符处理，降低中文目录出问题的概率。非 Windows 平台原样返回。
+pub fn engine_path(path: &Path) -> String {
+    #[cfg(windows)]
+    {
+        if let Ok(absolute) = std::fs::canonicalize(path) {
+            let text = absolute.to_string_lossy().to_string();
+            if !text.starts_with(r"\\?\") {
+                return format!(r"\\?\{text}");
+            }
+            return text;
+        }
+    }
+    path.to_string_lossy().to_string()
+}
 
 pub struct SherpaEngine {
     recognizer: OfflineRecognizer,
@@ -37,9 +56,9 @@ impl SherpaEngine {
         }
         let mut config = OfflineRecognizerConfig::default();
         config.model_config.paraformer = OfflineParaformerModelConfig {
-            model: Some(paths.asr_model.to_string_lossy().to_string()),
+            model: Some(engine_path(&paths.asr_model)),
         };
-        config.model_config.tokens = Some(paths.tokens.to_string_lossy().to_string());
+        config.model_config.tokens = Some(engine_path(&paths.tokens));
         config.model_config.num_threads = threads;
         config.model_config.provider = Some(provider.to_string());
         config.model_config.debug = false;
@@ -49,7 +68,7 @@ impl SherpaEngine {
         let punct = paths.punct_model.as_ref().and_then(|model| {
             let mut punct_config = OfflinePunctuationConfig::default();
             punct_config.model = OfflinePunctuationModelConfig {
-                ct_transformer: Some(model.to_string_lossy().to_string()),
+                ct_transformer: Some(engine_path(model)),
                 num_threads: threads.clamp(1, 2),
                 debug: false,
                 provider: Some(provider.to_string()),
@@ -59,7 +78,7 @@ impl SherpaEngine {
 
         let vad_config = paths.vad_model.as_ref().map(|model| VadModelConfig {
             silero_vad: SileroVadModelConfig {
-                model: Some(model.to_string_lossy().to_string()),
+                model: Some(engine_path(model)),
                 threshold: 0.5,
                 min_silence_duration: 0.25,
                 min_speech_duration: 0.25,
@@ -258,5 +277,11 @@ mod tests {
     #[test]
     fn 单个区间保持原样() {
         assert_eq!(SherpaEngine::plan_chunks(&[(0, 100)]), vec![(0, 100)]);
+    }
+
+    #[test]
+    fn 非windows平台路径原样传递() {
+        let path = Path::new("/tmp/models/model.int8.onnx");
+        assert_eq!(engine_path(path), "/tmp/models/model.int8.onnx");
     }
 }

@@ -229,6 +229,8 @@ pub struct FileState {
     pub actual_size: Option<u64>,
     pub exists: bool,
     pub optional: bool,
+    /// 文件存在时再试一次「打开并读几个字节」：杀软拦截、权限不足、被占用会在这里暴露。
+    pub readable: Option<bool>,
     /// `None` 表示没算（文件不存在）；`Some(true/false)` 表示算过并核对过。
     pub sha256_ok: Option<bool>,
     pub note: Option<String>,
@@ -238,6 +240,8 @@ pub struct FileState {
 pub struct Diagnostics {
     pub model_dir: String,
     pub model_dir_exists: bool,
+    /// 模型目录里含非 ASCII 字符（中文路径）：个别底层库会读不到文件。
+    pub non_ascii_path: bool,
     pub ready: bool,
     pub extras_ready: bool,
     pub files: Vec<FileState>,
@@ -252,6 +256,12 @@ pub fn diagnose(model_dir: &Path) -> Diagnostics {
         let path = model_dir.join(file.rel);
         let actual_size = path.metadata().ok().map(|meta| meta.len());
         let exists = actual_size.is_some();
+        // 存在但读不了（杀软拦截 / 权限 / 被占用）要单独报出来
+        let readable = if exists {
+            Some(file_readable(&path))
+        } else {
+            None
+        };
         let sha256_ok = if exists {
             Some(
                 sha256_file(&path)
@@ -263,6 +273,9 @@ pub fn diagnose(model_dir: &Path) -> Diagnostics {
         };
         let note = match (exists, sha256_ok) {
             (false, _) => Some("文件不存在".to_string()),
+            (true, _) if readable == Some(false) => {
+                Some("文件打不开：可能被安全软件拦截、权限不足或被别的程序占用".to_string())
+            }
             (true, Some(false)) => Some(format!(
                 "校验不过：大小 {}/{}，可能没下完或拷坏了",
                 actual_size.unwrap_or(0),
@@ -278,6 +291,7 @@ pub fn diagnose(model_dir: &Path) -> Diagnostics {
             actual_size,
             exists,
             optional: file.optional,
+            readable,
             sha256_ok,
             note,
         });
@@ -288,10 +302,20 @@ pub fn diagnose(model_dir: &Path) -> Diagnostics {
             .iter()
             .all(|f| f.optional || f.sha256_ok != Some(false));
     let extras_ready = paths.extras_ready();
+    let unreadable: Vec<String> = files
+        .iter()
+        .filter(|f| f.readable == Some(false))
+        .map(|f| f.rel.clone())
+        .collect();
     let hint = if !model_dir.is_dir() {
         format!(
             "模型目录不存在：{}。离线包请确认 data/models 与程序在同一层；也可以启动时加 --model-dir 指定。",
             model_dir.display()
+        )
+    } else if !unreadable.is_empty() {
+        format!(
+            "这些文件打不开：{}。多为安全软件拦截或权限问题：把解压目录加入杀毒白名单，或换到 D:\\mind_flow 这类目录重试。",
+            unreadable.join("、")
         )
     } else if !ready {
         let bad: Vec<String> = files
@@ -308,10 +332,23 @@ pub fn diagnose(model_dir: &Path) -> Diagnostics {
     Diagnostics {
         model_dir: model_dir.to_string_lossy().to_string(),
         model_dir_exists: model_dir.is_dir(),
+        non_ascii_path: model_dir.to_string_lossy().chars().any(|ch| !ch.is_ascii()),
         ready,
         extras_ready,
         files,
         hint,
+    }
+}
+
+/// 真的打开读几个字节：存在但读不了的文件必须能被发现。
+fn file_readable(path: &Path) -> bool {
+    use std::io::Read;
+    match std::fs::File::open(path) {
+        Ok(mut file) => {
+            let mut buffer = [0u8; 8];
+            file.read(&mut buffer).is_ok()
+        }
+        Err(_) => false,
     }
 }
 

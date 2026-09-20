@@ -4,6 +4,7 @@ import { mergeSentences } from "./protocol.js";
 
 export function initialState() {
   return {
+    version: "",
     clientId: null,
     session: null,
     sentences: [],
@@ -45,6 +46,7 @@ export function applyEvent(state, event) {
     case "status":
       return {
         ...state,
+        version: event.version ?? state.version,
         session: event.session ?? null,
         pending: event.pending_jobs ?? 0,
         audioVersion: event.audio_version ?? state.audioVersion,

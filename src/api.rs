@@ -55,6 +55,7 @@ impl AppState {
         let info = self.engine_info.lock().unwrap().clone();
         let model = self.model_status.lock().unwrap().clone();
         StatusEvent {
+            version: env!("CARGO_PKG_VERSION").to_string(),
             session: session.as_ref().map(|s| s.id.clone()),
             sentences: session.as_ref().map(|s| s.sentence_count()).unwrap_or(0),
             segments: session.as_ref().map(|s| s.doc.segments.len()).unwrap_or(0),
@@ -116,7 +117,12 @@ fn not_found() -> Response {
 async fn index() -> Response {
     match WEB.get_file("index.html") {
         Some(file) => (
-            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                // 本地程序：页面必须和当前二进制严格同版，
+                // 否则浏览器缓存的旧 app.js 会显示错乱状态（例如「模型没读进来」）。
+                (header::CACHE_CONTROL, "no-store, must-revalidate"),
+            ],
             file.contents(),
         )
             .into_response(),
@@ -127,7 +133,10 @@ async fn index() -> Response {
 async fn app_js() -> Response {
     match WEB.get_file("app.js") {
         Some(file) => (
-            [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+            [
+                (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-store, must-revalidate"),
+            ],
             file.contents(),
         )
             .into_response(),
@@ -138,7 +147,10 @@ async fn app_js() -> Response {
 async fn styles() -> Response {
     match WEB.get_file("styles.css") {
         Some(file) => (
-            [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
+            [
+                (header::CONTENT_TYPE, "text/css; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-store, must-revalidate"),
+            ],
             file.contents(),
         )
             .into_response(),
@@ -150,7 +162,10 @@ async fn lib_asset(Path(path): Path<String>) -> Response {
     let key = format!("lib/{path}");
     match WEB.get_file(&key) {
         Some(file) => (
-            [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+            [
+                (header::CONTENT_TYPE, "text/javascript; charset=utf-8"),
+                (header::CACHE_CONTROL, "no-store, must-revalidate"),
+            ],
             file.contents(),
         )
             .into_response(),

@@ -61,6 +61,7 @@ const el = {
   hold: document.getElementById("btn-hold"),
   inference: document.getElementById("inference"),
   engineDetail: document.getElementById("engine-detail"),
+  appVersion: document.getElementById("app-version"),
   dataDir: document.getElementById("data-dir"),
   modelDir: document.getElementById("model-dir"),
   modelMissing: document.getElementById("model-missing"),
@@ -100,6 +101,7 @@ function render() {
   el.modelDir.textContent = state.modelDir || "-";
   el.bannerModelDir.textContent = state.modelDir || "-";
   el.engineDetail.textContent = `${state.device}（${state.reason || "内置引擎"}）`;
+  el.appVersion.textContent = state.version || "-";
   el.modelStatus.textContent = state.modelReady
     ? state.modelExtrasReady
       ? "已就绪"
@@ -107,19 +109,26 @@ function render() {
     : state.modelDownloading
       ? "下载中…"
       : "缺失，需要下载";
-  el.banner.hidden = state.modelReady || state.modelDownloading;
-  el.bannerTitle.textContent = state.modelDownloading
-    ? "正在下载模型"
-    : state.modelMissing.length > 0
-      ? "还没准备好模型"
-      : "模型没读进来";
+  // 三种情况都要看得见：缺文件 / 文件在但引擎装载失败 / 还没就绪
+  const missing = state.modelMissing ?? [];
+  const bannerNeeded =
+    !state.modelDownloading && (!state.modelReady || Boolean(state.lastError));
+  el.banner.hidden = !bannerNeeded;
+  if (state.modelDownloading) {
+    el.bannerTitle.textContent = "正在下载模型";
+  } else if (missing.length > 0) {
+    el.bannerTitle.textContent = "缺少模型文件";
+  } else if (state.lastError) {
+    el.bannerTitle.textContent = "模型读不进来";
+  } else {
+    el.bannerTitle.textContent = "模型未就绪";
+  }
   if (!state.modelDownloading) {
     el.modelText.textContent =
-      state.modelMissing.length > 0
-        ? `缺少：${state.modelMissing.join(" · ")}`
-        : state.lastError || "首次使用需要下载约 320MB 的 Paraformer-zh 模型";
+      missing.length > 0
+        ? `缺少：${missing.join(" · ")}`
+        : state.lastError || "点「重新检查」重试；仍不行就打开诊断信息发我";
   }
-  const missing = state.modelMissing ?? [];
   el.rowMissing.hidden = missing.length === 0;
   el.modelMissing.textContent = missing.join(" · ") || "-";
   el.rowError.hidden = !state.lastError;

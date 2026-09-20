@@ -6,6 +6,7 @@ import { applyEvent, canRecord, initialState } from "../../web/lib/state.js";
 test("status 事件刷新设备与模型状态", () => {
   const state = applyEvent(initialState(), {
     type: "status",
+    version: "0.1.0",
     session: "abc",
     pending_jobs: 2,
     audio_version: 3,
@@ -29,6 +30,7 @@ test("status 事件刷新设备与模型状态", () => {
   assert.equal(state.modelReady, true);
   assert.equal(state.modelExtrasReady, false);
   assert.equal(state.recording, true);
+  assert.equal(state.version, "0.1.0");
 });
 
 test("sentences_added 追加句子并推进音频版本", () => {

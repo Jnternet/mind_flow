@@ -46,10 +46,12 @@ tar -C "$WORKSPACE" -cf - \
   --exclude=./target --exclude=./vendor --exclude=./dist --exclude=./data \
   --exclude=./.git --exclude=./.agents --exclude=./.codex \
   . | tar -C "$MIRROR" -xf -
-# 删掉镜像里工作区已经不要的文件
-git -C "$MIRROR" ls-files -z | while IFS= read -r -d '' path; do
-  [[ -e "$MIRROR/$path" ]] || git -C "$MIRROR" rm -q --cached "$path"
-done
+# 工作区里已经删掉的文件，在镜像里也要删掉（tar 只覆盖不删除）
+while IFS= read -r -d '' path; do
+  if [[ ! -e "$WORKSPACE/$path" ]]; then
+    git -C "$MIRROR" rm -q -f --ignore-unmatch -- "$path"
+  fi
+done < <(git -C "$MIRROR" ls-files -z)
 
 if git -C "$MIRROR" diff --quiet && git -C "$MIRROR" diff --cached --quiet \
    && [[ -z "$(git -C "$MIRROR" ls-files --others --exclude-standard)" ]]; then

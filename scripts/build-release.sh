@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 打发布产物到 dist/：
 #   Linux  x86_64 静态链接（单文件，解压即用）
-#   Windows x86_64 交叉编译（共享库方式，包里带 DLL）
+#   Windows x86_64 交叉编译（共享库方式，包里带 DLL；优先 MT 版＝不需要 VC++ 运行库）
 #   CUDA 引擎（可选）：--cuda=12|13，需要先 scripts/fetch-vendor.sh --cuda12
 #
 # 只做本机能验证的产物；某个平台缺预编译库时跳过并给出提示。
@@ -33,7 +33,8 @@ if [[ -d "$LINUX_LIB" ]]; then
   PKG="mind_flow-v$VERSION-x86_64-unknown-linux-gnu"
   rm -rf "$OUT/$PKG" && mkdir -p "$OUT/$PKG"
   cp target/x86_64-unknown-linux-gnu/release/mind_flow "$OUT/$PKG/"
-  cp README.md DESIGN.md "$OUT/$PKG/"
+  cp README.md DESIGN.md docs/测试说明.md "$OUT/$PKG/"
+  mkdir -p "$OUT/$PKG/docs" && mv "$OUT/$PKG/测试说明.md" "$OUT/$PKG/docs/"
   tar -C "$OUT" -czf "$OUT/$PKG.tar.gz" "$PKG"
   rm -rf "$OUT/$PKG"
 else
@@ -43,8 +44,11 @@ fi
 # ---------------------------------------------------------------- Windows
 WIN_LIB="${SHERPA_WIN_LIB_DIR:-}"
 if [[ -z "$WIN_LIB" ]]; then
-  for candidate in "$PWD/vendor/sherpa-onnx/sherpa-onnx-v${SHERPA_VERSION}-win-x64-shared-MD-Release-lib/lib" \
-                   "$PWD/vendor/sherpa-onnx/sherpa-onnx-v${SHERPA_VERSION}-win-x64-shared-MD-Release/lib"; do
+  for candidate in \
+    "$PWD/vendor/sherpa-onnx-win/sherpa-onnx-v${SHERPA_VERSION}-win-x64-shared-MT-Release/lib" \
+    "$PWD/vendor/sherpa-onnx-win/sherpa-onnx-v${SHERPA_VERSION}-win-x64-shared-MD-Release/lib" \
+    "$PWD/vendor/sherpa-onnx/sherpa-onnx-v${SHERPA_VERSION}-win-x64-shared-MT-Release-lib/lib" \
+    "$PWD/vendor/sherpa-onnx/sherpa-onnx-v${SHERPA_VERSION}-win-x64-shared-MD-Release-lib/lib"; do
     [[ -d "$candidate" ]] && WIN_LIB="$candidate" && break
   done
 fi
@@ -56,9 +60,12 @@ if [[ -n "$WIN_LIB" && -d "$WIN_LIB" ]]; then
     PKG="mind_flow-v$VERSION-x86_64-pc-windows-gnu"
     rm -rf "$OUT/$PKG" && mkdir -p "$OUT/$PKG"
     cp target/x86_64-pc-windows-gnu/release/mind_flow.exe "$OUT/$PKG/"
+    # 可选的 GPU 引擎：先放在包里，要测 GPU 时自己挪到 data/runtime/cuda/
+    cp target/x86_64-pc-windows-gnu/release/mind_flow-engine.exe "$OUT/$PKG/" 2>/dev/null || true
     # 运行期需要的 DLL 与 exe 放在同一层（Windows 会先找 exe 同级目录）
     find "$WIN_LIB" -maxdepth 2 -name '*.dll' -exec cp {} "$OUT/$PKG/" \;
     cp README.md "$OUT/$PKG/"
+    mkdir -p "$OUT/$PKG/docs" && cp docs/测试说明.md "$OUT/$PKG/docs/"
     (cd "$OUT" && zip -qr "$PKG.zip" "$PKG")
     rm -rf "$OUT/$PKG"
   else

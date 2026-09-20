@@ -11,7 +11,6 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 use clap::Parser;
-use serde::Deserialize;
 
 const ENGINE_PROTOCOL: u32 = 1;
 

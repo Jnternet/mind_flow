@@ -65,6 +65,26 @@ test("模型进度事件记录进度", () => {
   });
 });
 
+test("status 里的模型目录/缺失清单/错误会被记住", () => {
+  const state = applyEvent(initialState(), {
+    type: "status",
+    model_ready: false,
+    model_dir: "D:/mind_flow/data/models",
+    model_missing: ["paraformer-zh-2023-09-14-int8/model.int8.onnx"],
+    last_error: "装载识别引擎失败：模型目录不存在",
+  });
+  assert.equal(state.modelDir, "D:/mind_flow/data/models");
+  assert.deepEqual(state.modelMissing, ["paraformer-zh-2023-09-14-int8/model.int8.onnx"]);
+  assert.equal(state.lastError, "装载识别引擎失败：模型目录不存在");
+});
+
+test("模型就绪后错误会被清掉", () => {
+  const broken = applyEvent(initialState(), { type: "status", last_error: "出错了" });
+  const fixed = applyEvent(broken, { type: "status", model_ready: true, last_error: null });
+  assert.equal(fixed.lastError, null);
+  assert.equal(fixed.modelReady, true);
+});
+
 test("录音权：第一个标签独占", () => {
   const waiting = applyEvent(initialState(), { type: "hello", client_id: "c-2", recorder: false });
   assert.equal(canRecord(waiting), false, "没有录音权时不能录");

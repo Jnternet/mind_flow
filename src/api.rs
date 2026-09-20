@@ -33,6 +33,8 @@ const MAX_FRAME_BYTES: usize = 1 << 20;
 
 pub struct AppState {
     pub paths: Paths,
+    /// 实际使用的模型目录（离线包是程序同级 data/models；否则是数据目录下的 models）。
+    pub model_dir: PathBuf,
     pub config: Arc<Mutex<Config>>,
     pub session: Arc<Mutex<Option<ActiveSession>>>,
     pub events: broadcast::Sender<Event>,
@@ -40,6 +42,8 @@ pub struct AppState {
     pub engine_info: Arc<Mutex<EngineInfo>>,
     pub engine_reason: Arc<Mutex<String>>,
     pub model_status: Arc<Mutex<ModelStatus>>,
+    /// 最后一次失败原因（引擎装载、模型下载等），界面会一直显示，直到修好。
+    pub last_error: Arc<Mutex<Option<String>>>,
     pub recorder: Arc<Mutex<Option<String>>>,
     pub test_api: bool,
 }
@@ -64,6 +68,9 @@ impl AppState {
             model_downloading: model.downloading,
             data_dir: self.paths.data_dir.to_string_lossy().to_string(),
             recordings_dir: self.paths.recordings_dir().to_string_lossy().to_string(),
+            model_dir: self.model_dir.to_string_lossy().to_string(),
+            model_missing: model.missing.clone(),
+            last_error: self.last_error.lock().unwrap().clone(),
             title: session
                 .as_ref()
                 .map(|s| s.doc.title.clone())
@@ -93,6 +100,8 @@ pub fn router(state: Arc<AppState>) -> Router {
         .route("/api/sessions/current/audio", get(current_audio))
         .route("/api/models", get(get_models))
         .route("/api/models/download", post(download_models))
+        .route("/api/models/rescan", post(rescan_models))
+        .route("/api/diagnostics", get(get_diagnostics))
         .route("/api/config", post(set_config))
         .route("/api/recordings", get(list_recordings))
         .route("/api/test/segment", post(test_segment))
@@ -395,9 +404,51 @@ pub fn parse_range(value: &str, total: u64) -> Option<(u64, u64)> {
 }
 
 async fn get_models(State(state): State<Arc<AppState>>) -> Json<ModelStatus> {
-    let status = models::status(&state.paths.models_dir());
+    let status = models::status(&state.model_dir);
     *state.model_status.lock().unwrap() = status.clone();
     Json(status)
+}
+
+/// 完整诊断：程序在哪个目录找模型、每个文件在不在、校验过不过。
+/// 排查「模型文件明明在、网页却说不认识」时先看这个。
+async fn get_diagnostics(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
+    let diagnostics = models::diagnose(&state.model_dir);
+    let info = state.engine_info.lock().unwrap().clone();
+    Json(json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "exe_path": std::env::current_exe()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        "data_dir": state.paths.data_dir.to_string_lossy().to_string(),
+        "data_dir_is_portable": state.paths.portable,
+        "model_dir": state.model_dir.to_string_lossy().to_string(),
+        "recordings_dir": state.paths.recordings_dir().to_string_lossy().to_string(),
+        "bundled_models_dir": state.paths.bundled_models_dir().to_string_lossy().to_string(),
+        "log_file": state.paths.data_dir.join("mind_flow.log").to_string_lossy().to_string(),
+        "engine": info,
+        "engine_reason": state.engine_reason.lock().unwrap().clone(),
+        "last_error": state.last_error.lock().unwrap().clone(),
+        "models": diagnostics,
+    }))
+}
+
+/// 重新扫描模型（把模型拷进目录后不必重启程序）。
+async fn rescan_models(State(state): State<Arc<AppState>>) -> Response {
+    let status = models::status(&state.model_dir);
+    let ready = status.ready;
+    *state.model_status.lock().unwrap() = status.clone();
+    if ready {
+        reload_engine(&state).await;
+        state.last_error.lock().unwrap().take();
+    }
+    state.broadcast(Event::Status(state.status()));
+    Json(json!({
+        "ready": ready,
+        "extras_ready": status.extras_ready,
+        "missing": status.missing,
+        "model_dir": state.model_dir.to_string_lossy().to_string(),
+    }))
+    .into_response()
 }
 
 async fn download_models(State(state): State<Arc<AppState>>) -> Response {
@@ -417,7 +468,7 @@ pub fn spawn_model_download(state: &Arc<AppState>) -> bool {
     let state_clone = state.clone();
     tokio::spawn(async move {
         let config = state_clone.config.lock().unwrap().clone();
-        let models_dir = state_clone.paths.models_dir();
+        let models_dir = state_clone.model_dir.clone();
         let downloads_dir = state_clone.paths.downloads_dir();
         let events = state_clone.events.clone();
         let result = models::download_all(&models_dir, &downloads_dir, &config, move |progress| {
@@ -434,10 +485,12 @@ pub fn spawn_model_download(state: &Arc<AppState>) -> bool {
             Ok(()) => {
                 let status = models::status(&models_dir);
                 *state_clone.model_status.lock().unwrap() = status;
+                state_clone.last_error.lock().unwrap().take();
                 reload_engine(&state_clone).await;
                 state_clone.broadcast(Event::Status(state_clone.status()));
             }
             Err(error) => {
+                *state_clone.last_error.lock().unwrap() = Some(format!("模型下载失败：{error}"));
                 state_clone.broadcast(Event::Error {
                     code: "model_download".into(),
                     message: error.to_string(),
@@ -450,7 +503,7 @@ pub fn spawn_model_download(state: &Arc<AppState>) -> bool {
 
 /// 模型就绪后装载 CPU 引擎（GPU 探测由 gpu 模块另行处理）。
 pub async fn reload_engine(state: &Arc<AppState>) {
-    let paths = models::ModelPaths::resolve(&state.paths.models_dir());
+    let paths = models::ModelPaths::resolve(&state.model_dir);
     if !paths.is_ready() {
         return;
     }
@@ -476,12 +529,20 @@ pub async fn reload_engine(state: &Arc<AppState>) {
             Ok(engine) => {
                 *state.engine_info.lock().unwrap() = engine.info();
                 *state.engine_reason.lock().unwrap() = "内置 CPU 引擎".to_string();
+                state.last_error.lock().unwrap().take();
                 state.engine.swap(Box::new(engine));
             }
-            Err(error) => state.broadcast(Event::Error {
-                code: "engine_load".into(),
-                message: format!("装载识别引擎失败：{error}"),
-            }),
+            Err(error) => {
+                let message = format!(
+                    "装载识别引擎失败：{error}（模型目录：{}）",
+                    state.model_dir.display()
+                );
+                *state.last_error.lock().unwrap() = Some(message.clone());
+                state.broadcast(Event::Error {
+                    code: "engine_load".into(),
+                    message,
+                });
+            }
         }
     }
     #[cfg(not(any(feature = "sherpa", feature = "sherpa-shared", feature = "sherpa-cuda")))]

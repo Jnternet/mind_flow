@@ -40,6 +40,7 @@ async fn start_with(name: &str, test_api: bool) -> TestServer {
     let (events, _) = tokio::sync::broadcast::channel(128);
     let state = Arc::new(AppState {
         paths: paths.clone(),
+        model_dir: paths.models_dir(),
         config: Arc::new(Mutex::new(Config::default())),
         session: Arc::new(Mutex::new(None)),
         events,
@@ -47,6 +48,7 @@ async fn start_with(name: &str, test_api: bool) -> TestServer {
         engine_info: Arc::new(Mutex::new(EngineInfo::default())),
         engine_reason: Arc::new(Mutex::new("测试桩".into())),
         model_status: Arc::new(Mutex::new(models::status(&paths.models_dir()))),
+        last_error: Arc::new(Mutex::new(None)),
         recorder: Arc::new(Mutex::new(None)),
         test_api,
     });
@@ -285,6 +287,64 @@ async fn 刷新页面能取回完整会话() {
     assert_eq!(view["segments"].as_array().unwrap().len(), 1);
     assert!(view["audio_version"].as_u64().unwrap() >= 1);
     assert!(view["duration_ms"].as_u64().unwrap() >= 900);
+    let _ = std::fs::remove_dir_all(&server.data_dir);
+}
+
+#[tokio::test]
+async fn 诊断接口说明模型目录与缺失文件() {
+    let server = start("diagnostics").await;
+    let diagnostics = server.get_json("/api/diagnostics").await;
+    assert!(diagnostics["model_dir"].is_string());
+    assert_eq!(
+        diagnostics["models"]["model_dir"].as_str().unwrap(),
+        diagnostics["model_dir"].as_str().unwrap(),
+        "诊断里的模型目录要和程序实际用的一致"
+    );
+    let files = diagnostics["models"]["files"].as_array().unwrap();
+    assert!(files.len() >= 4, "应列出每个模型文件的状态");
+    // 测试环境没有模型：必需文件应被标为不存在，并给出下一步提示
+    assert_eq!(diagnostics["models"]["ready"], false);
+    let hint = diagnostics["models"]["hint"].as_str().unwrap();
+    assert!(
+        hint.contains("缺少") || hint.contains("不存在"),
+        "提示：{hint}"
+    );
+    assert!(files.iter().any(|f| f["exists"] == false));
+    assert!(diagnostics["engine"]["provider"].is_string());
+    let _ = std::fs::remove_dir_all(&server.data_dir);
+}
+
+#[tokio::test]
+async fn 重新检查能发现后放进来的模型() {
+    let server = start("rescan").await;
+    let before = reqwest::Client::new()
+        .post(format!("{}/api/models/rescan", server.base))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    assert_eq!(before["ready"], false);
+    assert!(before["missing"].as_array().unwrap().len() >= 2);
+
+    // 模拟用户把模型拷进了目录（内容不需要真的是模型，扫描只看存在与否）
+    let models_dir = server.state.model_dir.clone();
+    let asr_dir = models_dir.join("paraformer-zh-2023-09-14-int8");
+    std::fs::create_dir_all(&asr_dir).unwrap();
+    std::fs::write(asr_dir.join("model.int8.onnx"), b"demo").unwrap();
+    std::fs::write(asr_dir.join("tokens.txt"), b"demo").unwrap();
+
+    let after = reqwest::Client::new()
+        .post(format!("{}/api/models/rescan", server.base))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap();
+    assert_eq!(after["ready"], true, "重新扫描后应认为模型已就绪：{after}");
+    assert!(after["model_dir"].as_str().unwrap().contains("models"));
     let _ = std::fs::remove_dir_all(&server.data_dir);
 }
 

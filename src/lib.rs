@@ -6,6 +6,7 @@ pub mod config;
 pub mod engine;
 pub mod events;
 pub mod export;
+pub mod logging;
 pub mod models;
 pub mod sentences;
 pub mod session;

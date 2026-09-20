@@ -110,6 +110,36 @@ body {
   background: var(--card);
 }
 
+.banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.path-line {
+  display: block;
+}
+
+code {
+  word-break: break-all;
+}
+
+.link {
+  border: 0;
+  background: none;
+  color: var(--focus);
+  text-decoration: underline;
+  padding: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
 main {
   flex: 1;
   overflow-y: auto;

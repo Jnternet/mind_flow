@@ -24,11 +24,17 @@
     <div class="level" id="level"><span></span></div>
 
     <section class="banner" id="model-banner" hidden>
-      <div>
-        <strong>还没准备好模型</strong>
+      <div class="banner-text">
+        <strong id="banner-title">还没准备好模型</strong>
         <span class="muted" id="model-text">首次使用需要下载约 320MB 的 Paraformer-zh 模型</span>
+        <span class="muted path-line">程序查找的模型目录：<code id="banner-model-dir">-</code>
+          <button class="link" id="btn-open-diagnostics" type="button">查看诊断信息</button>
+        </span>
       </div>
-      <button id="btn-download" type="button">开始下载</button>
+      <div class="banner-actions">
+        <button class="ghost" id="btn-rescan" type="button">重新检查</button>
+        <button id="btn-download" type="button">开始下载</button>
+      </div>
     </section>
 
     <div class="toast" id="toast" hidden></div>
@@ -75,6 +81,23 @@
       <div class="row">
         <span>模型</span>
         <span class="muted" id="model-status">检查中…</span>
+      </div>
+      <div class="row">
+        <span>模型目录</span>
+        <code id="model-dir">-</code>
+      </div>
+      <div class="row" id="row-missing">
+        <span>缺少的模型</span>
+        <code id="model-missing">-</code>
+      </div>
+      <div class="row" id="row-error" hidden>
+        <span>最后的错误</span>
+        <code id="last-error">-</code>
+      </div>
+      <div class="row">
+        <span>排查</span>
+        <span class="muted"><button class="link" id="btn-diagnostics" type="button">打开 /api/diagnostics</button>
+          · 日志在 <code>data/mind_flow.log</code></span>
       </div>
       <div class="keys">
         <p><kbd>空格</kbd> 按住说话，松开松开识别（正在编辑文字时空格照常输入）</p>

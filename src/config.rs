@@ -128,6 +128,25 @@ impl Paths {
         self.data_dir.join("models")
     }
 
+    /// 随包内置的模型目录：程序同级 `data/models`。
+    /// 离线包解压出来就在这里，即使数据目录回退到用户目录也要能找到它们。
+    pub fn bundled_models_dir(&self) -> PathBuf {
+        default_portable_dir().join("models")
+    }
+
+    /// 实际使用的模型目录，优先级：
+    /// 1) 命令行显式指定；2) 程序同级 `data/models`（离线包）；3) 数据目录下的 `models`。
+    pub fn resolve_model_dir(&self, explicit: Option<&Path>) -> PathBuf {
+        if let Some(dir) = explicit {
+            return dir.to_path_buf();
+        }
+        let bundled = self.bundled_models_dir();
+        if bundled.is_dir() {
+            return bundled;
+        }
+        self.models_dir()
+    }
+
     pub fn downloads_dir(&self) -> PathBuf {
         self.data_dir.join("models").join(".download")
     }
@@ -218,5 +237,15 @@ mod tests {
         assert_eq!(loaded.port, 9001);
         assert_eq!(loaded.inference, Inference::Cpu);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn 显式模型目录优先() {
+        let paths = Paths {
+            data_dir: std::env::temp_dir().join("mind_flow_cfg_models"),
+            portable: true,
+        };
+        let explicit = PathBuf::from("/tmp/some-models");
+        assert_eq!(paths.resolve_model_dir(Some(&explicit)), explicit);
     }
 }

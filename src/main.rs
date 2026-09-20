@@ -9,10 +9,10 @@ use mind_flow::api::{self, AppState};
 use mind_flow::config::{Config, Inference, Paths};
 use mind_flow::engine::{Engine, EngineInfo, EngineService, StubEngine};
 use mind_flow::events::Event;
+use mind_flow::logging;
 use mind_flow::models::{self, ModelPaths};
 use mind_flow::session::ActiveSession;
 use tokio::sync::mpsc;
-use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -49,16 +49,13 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .with_target(false)
-        .init();
-
     let cli = Cli::parse();
     let paths = Paths::resolve(cli.data_dir.as_deref());
     paths.ensure_dirs()?;
+
+    // 日志同时落一份文件：Windows 上双击运行看不到终端，出问题让用户发这个文件就行。
+    let log_path = logging::init(&paths.data_dir)?;
+
     let mut config = Config::load(&paths.data_dir);
     if let Some(port) = cli.port {
         config.port = port;
@@ -76,7 +73,7 @@ async fn main() -> Result<()> {
         tracing::warn!("程序目录不可写，数据放到 {}", paths.data_dir.display());
     }
 
-    let models_dir = cli.model_dir.clone().unwrap_or_else(|| paths.models_dir());
+    let models_dir = paths.resolve_model_dir(cli.model_dir.as_deref());
     let stub = cli.engine == "stub";
 
     // 引擎：stub 直接可用；real 在模型齐全时同步装载 CPU 引擎
@@ -88,6 +85,7 @@ async fn main() -> Result<()> {
 
     let state = Arc::new(AppState {
         paths: paths.clone(),
+        model_dir: models_dir.clone(),
         config: Arc::new(Mutex::new(config.clone())),
         session: Arc::new(Mutex::new(None)),
         events,
@@ -95,11 +93,53 @@ async fn main() -> Result<()> {
         engine_info: Arc::new(Mutex::new(EngineInfo::default())),
         engine_reason: Arc::new(Mutex::new("正在装载模型".to_string())),
         model_status: Arc::new(Mutex::new(models::status(&models_dir))),
+        last_error: Arc::new(Mutex::new(None)),
         recorder: Arc::new(Mutex::new(None)),
         test_api: stub || cli.test_api,
     });
 
     tokio::spawn(api::engine_event_loop(state.clone(), engine_rx));
+
+    // 排查「模型文件在、网页却说不认识」：把关键路径一次性写进日志
+    tracing::info!(
+        "程序路径：{}",
+        std::env::current_exe()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| "未知".to_string())
+    );
+    tracing::info!(
+        "数据目录：{}（{}）",
+        paths.data_dir.display(),
+        if paths.portable {
+            "程序同级"
+        } else {
+            "回退到用户目录"
+        }
+    );
+    tracing::info!(
+        "模型目录：{}（{}）",
+        models_dir.display(),
+        if models_dir == paths.bundled_models_dir() {
+            "随包内置"
+        } else {
+            "数据目录下"
+        }
+    );
+    if !paths.portable && paths.bundled_models_dir().is_dir() {
+        tracing::warn!(
+            "程序目录不可写、数据已放到 {}；但检测到随包内置模型，仍会从 {} 读取",
+            paths.data_dir.display(),
+            models_dir.display()
+        );
+    }
+    let model_status = state.model_status.lock().unwrap().clone();
+    if !model_status.ready {
+        tracing::warn!(
+            "模型不完整，缺少：{}；模型目录 {}",
+            model_status.missing.join(", "),
+            models_dir.display()
+        );
+    }
 
     // 恢复未完成的会话
     if let Some(dir) = ActiveSession::find_unfinished(&paths) {
@@ -245,7 +285,7 @@ async fn gpu_task(
     _model_paths: ModelPaths,
 ) {
     let engine_path = mind_flow::engine::gpu::cuda_engine_path(&state.paths.runtime_cuda_dir());
-    let models_dir = state.paths.models_dir();
+    let models_dir = state.model_dir.clone();
     if !engine_path.exists() {
         *state.engine_reason.lock().unwrap() = "未安装 CUDA 引擎附件，使用 CPU".to_string();
         state.broadcast(Event::Status(state.status()));

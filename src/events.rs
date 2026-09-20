@@ -47,6 +47,12 @@ pub struct StatusEvent {
     pub model_downloading: bool,
     pub data_dir: String,
     pub recordings_dir: String,
+    /// 程序实际查找模型的目录（排查「模型明明在却不识别」第一要看这个）。
+    pub model_dir: String,
+    /// 缺失的必需模型（相对路径）。
+    pub model_missing: Vec<String>,
+    /// 最近一次失败原因（引擎装载 / 模型下载），修好后自动清空。
+    pub last_error: Option<String>,
     pub title: String,
     pub recording: bool,
     pub recorder_client: Option<String>,

@@ -91,6 +91,7 @@ fn 只在数据目录写文件() {
         "config.rs",
         "export.rs",
         "gpu.rs",
+        "logging.rs",
         "models.rs",
         "session.rs",
     ];

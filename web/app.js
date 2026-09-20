@@ -38,8 +38,12 @@ const el = {
   chipCount: document.getElementById("chip-count"),
   level: document.getElementById("level").firstElementChild,
   banner: document.getElementById("model-banner"),
+  bannerTitle: document.getElementById("banner-title"),
+  bannerModelDir: document.getElementById("banner-model-dir"),
   modelText: document.getElementById("model-text"),
   download: document.getElementById("btn-download"),
+  rescan: document.getElementById("btn-rescan"),
+  openDiagnostics: document.getElementById("btn-open-diagnostics"),
   toast: document.getElementById("toast"),
   sentences: document.getElementById("sentences"),
   emptyTip: document.getElementById("empty-tip"),
@@ -58,6 +62,12 @@ const el = {
   inference: document.getElementById("inference"),
   engineDetail: document.getElementById("engine-detail"),
   dataDir: document.getElementById("data-dir"),
+  modelDir: document.getElementById("model-dir"),
+  modelMissing: document.getElementById("model-missing"),
+  rowMissing: document.getElementById("row-missing"),
+  rowError: document.getElementById("row-error"),
+  lastError: document.getElementById("last-error"),
+  diagnostics: document.getElementById("btn-diagnostics"),
   modelStatus: document.getElementById("model-status"),
 };
 
@@ -87,6 +97,8 @@ function render() {
   el.chipPending.textContent = `识别中 ${state.pending}`;
   el.chipCount.textContent = `${state.sentences.length} 句`;
   el.dataDir.textContent = state.dataDir || "-";
+  el.modelDir.textContent = state.modelDir || "-";
+  el.bannerModelDir.textContent = state.modelDir || "-";
   el.engineDetail.textContent = `${state.device}（${state.reason || "内置引擎"}）`;
   el.modelStatus.textContent = state.modelReady
     ? state.modelExtrasReady
@@ -96,6 +108,22 @@ function render() {
       ? "下载中…"
       : "缺失，需要下载";
   el.banner.hidden = state.modelReady || state.modelDownloading;
+  el.bannerTitle.textContent = state.modelDownloading
+    ? "正在下载模型"
+    : state.modelMissing.length > 0
+      ? "还没准备好模型"
+      : "模型没读进来";
+  if (!state.modelDownloading) {
+    el.modelText.textContent =
+      state.modelMissing.length > 0
+        ? `缺少：${state.modelMissing.join(" · ")}`
+        : state.lastError || "首次使用需要下载约 320MB 的 Paraformer-zh 模型";
+  }
+  const missing = state.modelMissing ?? [];
+  el.rowMissing.hidden = missing.length === 0;
+  el.modelMissing.textContent = missing.join(" · ") || "-";
+  el.rowError.hidden = !state.lastError;
+  el.lastError.textContent = state.lastError || "-";
   if (state.modelDownloading && state.modelProgress) {
     const value = percent(state.modelProgress.downloaded, state.modelProgress.total);
     const size = `${humanSize(state.modelProgress.downloaded)} / ${humanSize(state.modelProgress.total)}`;
@@ -402,6 +430,31 @@ el.download.addEventListener("click", async () => {
   await fetch("/api/models/download", { method: "POST" });
   state = { ...state, modelDownloading: true };
   render();
+});
+
+el.rescan.addEventListener("click", async () => {
+  el.modelText.textContent = "正在重新检查…";
+  const response = await fetch("/api/models/rescan", { method: "POST" });
+  const result = await response.json();
+  if (!response.ok) {
+    state = { ...state, toast: "重新检查失败" };
+  } else if (result.ready) {
+    state = { ...state, toast: "模型已就绪", modelReady: true, modelMissing: [] };
+  } else {
+    state = {
+      ...state,
+      toast: `仍然缺：${(result.missing ?? []).join(" · ")}`,
+      modelMissing: result.missing ?? [],
+    };
+  }
+  render();
+});
+
+el.openDiagnostics.addEventListener("click", () => {
+  window.open("/api/diagnostics", "_blank");
+});
+el.diagnostics.addEventListener("click", () => {
+  window.open("/api/diagnostics", "_blank");
 });
 
 el.settings.addEventListener("click", () => {

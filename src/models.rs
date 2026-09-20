@@ -220,6 +220,101 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
+/// 单个模型的体检结果（诊断用）。
+#[derive(Debug, Clone, Serialize)]
+pub struct FileState {
+    pub rel: String,
+    pub path: String,
+    pub expected_size: u64,
+    pub actual_size: Option<u64>,
+    pub exists: bool,
+    pub optional: bool,
+    /// `None` 表示没算（文件不存在）；`Some(true/false)` 表示算过并核对过。
+    pub sha256_ok: Option<bool>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct Diagnostics {
+    pub model_dir: String,
+    pub model_dir_exists: bool,
+    pub ready: bool,
+    pub extras_ready: bool,
+    pub files: Vec<FileState>,
+    /// 给用户看的结论与下一步建议。
+    pub hint: String,
+}
+
+/// 逐个文件体检：存在性、大小、SHA-256（存在的文件才算）。
+pub fn diagnose(model_dir: &Path) -> Diagnostics {
+    let mut files = Vec::new();
+    for file in MODEL_FILES {
+        let path = model_dir.join(file.rel);
+        let actual_size = path.metadata().ok().map(|meta| meta.len());
+        let exists = actual_size.is_some();
+        let sha256_ok = if exists {
+            Some(
+                sha256_file(&path)
+                    .map(|digest| digest.eq_ignore_ascii_case(file.sha256))
+                    .unwrap_or(false),
+            )
+        } else {
+            None
+        };
+        let note = match (exists, sha256_ok) {
+            (false, _) => Some("文件不存在".to_string()),
+            (true, Some(false)) => Some(format!(
+                "校验不过：大小 {}/{}，可能没下完或拷坏了",
+                actual_size.unwrap_or(0),
+                file.size
+            )),
+            (true, Some(true)) => None,
+            _ => None,
+        };
+        files.push(FileState {
+            rel: file.rel.to_string(),
+            path: path.to_string_lossy().to_string(),
+            expected_size: file.size,
+            actual_size,
+            exists,
+            optional: file.optional,
+            sha256_ok,
+            note,
+        });
+    }
+    let paths = ModelPaths::resolve(model_dir);
+    let ready = paths.is_ready()
+        && files
+            .iter()
+            .all(|f| f.optional || f.sha256_ok != Some(false));
+    let extras_ready = paths.extras_ready();
+    let hint = if !model_dir.is_dir() {
+        format!(
+            "模型目录不存在：{}。离线包请确认 data/models 与程序在同一层；也可以启动时加 --model-dir 指定。",
+            model_dir.display()
+        )
+    } else if !ready {
+        let bad: Vec<String> = files
+            .iter()
+            .filter(|f| !f.optional && (f.sha256_ok != Some(true)))
+            .map(|f| format!("{}（{}）", f.rel, f.note.clone().unwrap_or_default()))
+            .collect();
+        format!("缺少或损坏的必需模型：{}", bad.join("；"))
+    } else if !extras_ready {
+        "识别模型可用；标点/VAD 缺失，会退化成按静音断句（可继续用）。".to_string()
+    } else {
+        "模型齐全且校验通过。".to_string()
+    };
+    Diagnostics {
+        model_dir: model_dir.to_string_lossy().to_string(),
+        model_dir_exists: model_dir.is_dir(),
+        ready,
+        extras_ready,
+        files,
+        hint,
+    }
+}
+
 fn expanded(url: &str, base: &str) -> String {
     url.replace("{base}", base.trim_end_matches('/'))
 }

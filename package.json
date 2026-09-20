@@ -1,0 +1,10 @@
+{
+  "name": "mind-flow-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "前端纯逻辑的测试宿主：不装任何依赖，用 Node 内置测试运行器",
+  "scripts": {
+    "test": "node --test \"tests/js/*.test.js\""
+  }
+}

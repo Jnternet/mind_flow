@@ -1,0 +1,6 @@
+/target
+/dist
+/data
+/vendor
+/node_modules
+*.log

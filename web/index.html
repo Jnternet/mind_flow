@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>mind_flow · 本地语音笔记</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <div class="bar-left">
+        <span class="dot" id="rec-dot" aria-hidden="true"></span>
+        <strong id="state-text">准备就绪</strong>
+        <span class="muted" id="hint">按住空格开始说话，松开出字</span>
+      </div>
+      <div class="bar-right">
+        <span class="chip" id="chip-device" title="推理设备">CPU</span>
+        <span class="chip" id="chip-pending" hidden>识别中 0</span>
+        <span class="chip" id="chip-count">0 句</span>
+        <button class="ghost" id="btn-settings" type="button">设置</button>
+      </div>
+    </header>
+
+    <div class="level" id="level"><span></span></div>
+
+    <section class="banner" id="model-banner" hidden>
+      <div>
+        <strong>还没准备好模型</strong>
+        <span class="muted" id="model-text">首次使用需要下载约 320MB 的 Paraformer-zh 模型</span>
+      </div>
+      <button id="btn-download" type="button">开始下载</button>
+    </section>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <main>
+      <ol class="sentences" id="sentences"></ol>
+      <p class="empty" id="empty-tip">
+        按住空格说第一句。松开后会自动识别，每句话都带时间戳，点一下就能回听。
+      </p>
+    </main>
+
+    <footer class="player">
+      <button class="play" id="btn-play" type="button" title="播放 / 暂停">▶</button>
+      <span class="time" id="time-now">00:00</span>
+      <input class="seek" id="seek" type="range" min="0" max="0" step="1" value="0" />
+      <span class="time" id="time-total">00:00</span>
+      <label class="title-field">
+        <input id="title" type="text" value="语音笔记" maxlength="40" aria-label="标题" />
+      </label>
+      <button class="primary" id="btn-finish" type="button">结束并保存</button>
+      <button class="ghost" id="btn-hold" type="button" title="不方便用空格时，按住这里录音">按住录音</button>
+      <button class="ghost danger" id="btn-discard" type="button">丢弃</button>
+      <audio id="audio" preload="metadata"></audio>
+    </footer>
+
+    <aside class="drawer" id="drawer" hidden>
+      <h2>设置</h2>
+      <label class="row">
+        <span>推理设备</span>
+        <select id="inference">
+          <option value="auto">自动（优先 GPU）</option>
+          <option value="cuda">强制 GPU（CUDA）</option>
+          <option value="cpu">只用 CPU</option>
+        </select>
+      </label>
+      <div class="row">
+        <span>当前设备</span>
+        <span class="muted" id="engine-detail">CPU</span>
+      </div>
+      <div class="row">
+        <span>数据目录</span>
+        <code id="data-dir">-</code>
+      </div>
+      <div class="row">
+        <span>模型</span>
+        <span class="muted" id="model-status">检查中…</span>
+      </div>
+      <div class="keys">
+        <p><kbd>空格</kbd> 按住说话，松开松开识别（正在编辑文字时空格照常输入）</p>
+        <p><kbd>点击时间戳</kbd> 跳到那句话；<kbd>点击文字</kbd> 直接修改</p>
+      </div>
+      <button class="ghost" id="btn-close-drawer" type="button">收起</button>
+    </aside>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

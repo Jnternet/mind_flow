@@ -1,0 +1,61 @@
+[package]
+name = "mind_flow"
+version = "0.1.0"
+edition = "2024"
+description = "本地语音笔记：按住空格说话，松开出字，每句一个可回跳的时间戳（FunASR Paraformer-zh + 网页 GUI，GPU 优先 / CPU 回落）"
+license = "MIT"
+readme = "README.md"
+
+[[bin]]
+name = "mind_flow"
+path = "src/main.rs"
+
+[[bin]]
+name = "mind_flow-engine"
+path = "src/bin/engine.rs"
+
+[[example]]
+name = "probe"
+required-features = ["sherpa"]
+
+[dependencies]
+anyhow = "1.0.104"
+axum = { version = "0.8.9", features = ["ws", "macros"] }
+bzip2 = "0.6.1"
+chrono = { version = "0.4.45", features = ["clock", "serde"] }
+clap = { version = "4.6.7", features = ["derive"] }
+futures-util = "0.3.34"
+include_dir = "0.7.4"
+rand = { version = "0.10.3", features = ["std_rng"] }
+rubato = "5.0.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+sha2 = "0.11.0"
+sherpa-onnx = { version = "1.13.8", optional = true, default-features = false }
+tar = "0.4.46"
+thiserror = "2.0.20"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "blocking"] }
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros", "net", "signal", "time", "sync", "fs", "io-util", "process", "io-std"] }
+tokio-util = { version = "0.7.19", features = ["io"] }
+tower-http = "0.7.1"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+
+[features]
+default = []
+# 内置 CPU 引擎（发行版默认走这里）
+sherpa = ["dep:sherpa-onnx", "sherpa-onnx/static"]
+# 共享库方式链接（Windows 发行包、CUDA 引擎都走这条）
+sherpa-shared = ["dep:sherpa-onnx", "sherpa-onnx/shared"]
+# CUDA 引擎（独立构建：--features sherpa-cuda + SHERPA_ONNX_LIB_DIR 指向 CUDA 预编译库）
+sherpa-cuda = ["sherpa-shared"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+
+[dev-dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
